@@ -7,10 +7,9 @@ import json
 import os
 import datetime
 
-class cryptota:
-    def __init__(self, root:str):
+class Cryptota:
+    def __init__(self, root:str, secret=''):
         self.date_now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        pw = getpass.getpass()
         self.root = root
         self.log_1_path = f"{self.root}\\logs\\{self.date_now}_db_1.log"
         self.log_2_path = f"{self.root}\\logs\\{self.date_now}_db_2.log"
@@ -21,7 +20,11 @@ class cryptota:
             os.makedirs(f"{self.root}\\logs")
         if not os.path.exists(f"{self.root}\\keys"):
             os.makedirs(f"{self.root}\\keys")
-        self.secret = pw
+        if secret:
+            self.secret = secret
+        else:
+            pw = getpass.getpass()
+            self.secret = pw
 
 
     def read_kbkx(self, db_1_path:str, db_2_path:str):
@@ -43,9 +46,9 @@ class cryptota:
             
             if finded:
                 res = self.entries_comp(db_1_gr, db_2_gr, kp_db_1, kp_db_2)
-                if res['changes_db_1']:
+                if res['changes_db_1']['add'] or res['changes_db_1']['edited']:
                     changes_db_1 = str(res['changes_db_1'])
-                if res['changes_db_2']:
+                if res['changes_db_2']['add'] or res['changes_db_2']['edited']:
                     changes_db_2 = str(res['changes_db_2'])
             else:
                 print(f"not found in android: {db_1_gr.name}")
@@ -65,13 +68,29 @@ class cryptota:
     def entries_comp(self, db_1_gr, db_2_gr, kp_db_1, kp_db_2):
         changes_db_1 = False
         changes_db_2 = False
+        edited_db_1 = False
+        edited_db_2 = False
 
         ## INTO DB 2
         for db_1_ent in db_1_gr.entries:
             finded = False
             for db_2_ent in db_2_gr.entries:
-                if db_1_ent.title == db_2_ent.title:
+                if f"{db_1_ent.title}{str(db_1_ent.username).lower()}" == f"{db_2_ent.title}{str(db_2_ent.username).lower()}":
                     finded = True
+                    if db_1_ent.password != db_2_ent.password:
+                        #print(f"DIF PASSWORD FOR {db_1_ent.title}; db1({db_1_ent.mtime}) {db_1_ent.password} != db2({db_2_ent.mtime}) {db_2_ent.password}")
+                        if db_1_ent.mtime > db_2_ent.mtime:
+                            #print(f"({db_1_ent.group}: {db_1_ent.title}) DIF PASSWORD db_1 ACTUAL DIF: {(db_1_ent.mtime-db_2_ent.mtime).days} days")
+                            self.log_db_2['db_logs'].append(f"CHANGED ENITY ({db_2_ent.group}: {db_2_ent.title}) DIF PASSWORD db_1 ACTUAL DIF: {(db_1_ent.mtime-db_2_ent.mtime).days} days")
+                            db_2_ent.password = db_1_ent.password
+                            edited_db_2 = True
+                        else:
+                            #print(f"({db_2_ent.group}: {db_2_ent.title}) DIF PASSWORD db_2 ACTUAL DIF: {(db_2_ent.mtime-db_1_ent.mtime).days} days")
+                            self.log_db_1['db_logs'].append(f"CHANGED ENITY ({db_1_ent.group}: {db_1_ent.title}) DIF PASSWORD db_2 ACTUAL DIF: {(db_2_ent.mtime-db_1_ent.mtime).days} days")
+                            db_1_ent.password = db_2_ent.password
+                            edited_db_1 = True
+                        #print(f"db2= {db_2_ent.password} db1= {db_1_ent.password}")
+
             
             if finded:
                 pass
@@ -97,7 +116,17 @@ class cryptota:
                 self.create_ent(kp_db_1, db_1_gr, db_2_ent.title, db_2_ent.username, db_2_ent.password, db_2_ent.url, db_2_ent.notes)
                 self.log_db_1['db_logs'].append(f"CREATED IN GROUP: {db_1_gr.name}; ENTRY: {db_2_ent.title}")
                 changes_db_2 = True
-        return {'changes_db_1' : changes_db_1, 'changes_db_2' : changes_db_2}
+        res = {
+            'changes_db_1' : {
+                'add':      changes_db_1, 
+                'edited':   edited_db_1
+                }, 
+            'changes_db_2' : {
+                'add':      changes_db_2, 
+                'edited':   edited_db_2
+                }
+        }
+        return res
     
 
     def create_ent(self, kp, kp_group, gr_title, ent_name, ent_pass, ent_url, ent_notes):
@@ -163,7 +192,7 @@ class cryptota:
 
 
 if __name__ == '__main__':
-    cr = cryptota(os.path.abspath(os.path.curdir)) # Инициализация с секректным паролем
+    cr = Cryptota(os.path.abspath(os.path.curdir)) # Инициализация с секректным паролем
     #cr.create_keys() # Создание крипто ключей в папку keys
     #cr.encode_file('password') # Создание скректно файла для хранения пароля
-    #cr.read_kbkx('db_1_path','db_2_path') # Синхронизация новых записей в .kbkx файлах(позже добавлю полную синхронизацию с решением конфликтов)
+    cr.read_kbkx('db_1_full_path', 'db_2_full_path') # Синхронизация новых записей в .kbkx файлах(позже добавлю полную синхронизацию с решением конфликтов)

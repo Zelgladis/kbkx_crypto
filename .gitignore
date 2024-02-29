@@ -1,3 +1,5 @@
+/__pycache__
 /DataBases/*
 /Keys/*
 /logs/*
+/test_run.py
